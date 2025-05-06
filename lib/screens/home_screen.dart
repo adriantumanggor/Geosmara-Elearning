@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../widgets/course_card.dart';
 import '../models/course.dart';
 import '../screens/modules_screen.dart';
-import '../services/course_service.dart'; // Add this import for the service
+import '../services/course_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,6 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // Create instance of CourseService
   final CourseService _courseService = CourseService();
 
+  // Key for SharedPreferences
+  static const String _cachedCoursesKey = 'cached_courses';
+
   @override
   void initState() {
     super.initState();
@@ -36,30 +41,96 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
 
-    // Fetch courses when screen loads
-    _fetchCourses();
+    // Load courses from cache first, then check if we need to fetch from API
+    _loadCourses();
   }
 
-  // Method to fetch courses from API
-  Future<void> _fetchCourses() async {
+  bool isDevelopmentMode = true; // Set to false in production
+
+  Future<void> _loadCourses() async {
     try {
       setState(() {
         _isLoading = true;
         _errorMessage = '';
       });
 
+      if (!isDevelopmentMode) {
+        // Try to load from cache in production mode
+        final cachedCourses = await _loadCoursesFromCache();
+        if (cachedCourses.isNotEmpty) {
+          setState(() {
+            _courses = cachedCourses;
+            _isLoading = false;
+          });
+          return; // Exit early if cache is used
+        }
+      }
+
+      // Always fetch from API in development mode or if cache is empty
+      await _fetchAndCacheCourses();
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load courses. Please try again.';
+        _isLoading = false;
+      });
+      print('Error loading courses: $e');
+    }
+  }
+
+  // Load courses from SharedPreferences
+  Future<List<Course>> _loadCoursesFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? coursesJson = prefs.getString(_cachedCoursesKey);
+
+      if (coursesJson != null) {
+        final List<dynamic> decodedList = jsonDecode(coursesJson);
+        return decodedList
+            .map((courseJson) => Course.fromJson(courseJson))
+            .toList();
+      }
+    } catch (e) {
+      print('Error loading courses from cache: $e');
+    }
+
+    return []; // Return empty list if cache loading fails
+  }
+
+  // Fetch courses from API and cache them
+  Future<void> _fetchAndCacheCourses() async {
+    try {
       final courses = await _courseService.fetchCourses();
 
       setState(() {
         _courses = courses;
         _isLoading = false;
       });
+
+      // Cache the courses
+      _saveCourses(courses);
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to load courses: $e';
         _isLoading = false;
       });
       print('Error fetching courses: $e');
+    }
+  }
+
+  // Save courses to SharedPreferences
+  Future<void> _saveCourses(List<Course> courses) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Convert courses to a JSON string
+      final List<Map<String, dynamic>> coursesMap =
+      courses.map((course) => course.toJson()).toList();
+      final String coursesJson = jsonEncode(coursesMap);
+
+      // Save to SharedPreferences
+      await prefs.setString(_cachedCoursesKey, coursesJson);
+    } catch (e) {
+      print('Error saving courses to cache: $e');
     }
   }
 
@@ -73,9 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF9F9F9),
-      body: RefreshIndicator(
-        onRefresh: _fetchCourses,
-        child: SingleChildScrollView(
+      body:SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             children: [
@@ -144,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: _fetchCourses,
+                        onPressed: _loadCourses,
                         child: const Text('Retry'),
                       ),
                     ],
@@ -197,7 +266,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-      ),
     );
   }
 }

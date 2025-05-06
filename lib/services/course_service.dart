@@ -40,6 +40,7 @@ class CourseService {
     }
   }
 
+  // Modified to align with our model classes' serialization
   Course _parseCourse(Map<String, dynamic> json) {
     List<Module> modules = [];
 
@@ -49,15 +50,19 @@ class CourseService {
           .toList();
     }
 
+    // Create a course with the API response format
     return Course(
       id: json['id'],
       title: json['title'],
+      // Note: API uses image_url but our model uses imageUrl
+      // We're adapting here to maintain consistency
       imageUrl: json['image_url'],
       finished: json['finished'] ?? false,
       modules: modules,
     );
   }
 
+  // Modified to align with our model classes' serialization
   Module _parseModule(Map<String, dynamic> json) {
     List<String> imageUrls = [];
     List<Content> contents = [];
@@ -87,7 +92,6 @@ class CourseService {
     );
   }
 
-  // Add this method to your CourseService class
   Future<bool> updateCourseStatus(int courseId, bool finished) async {
     try {
       final response = await http.patch(
